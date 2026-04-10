@@ -1,0 +1,7 @@
+path: dataset_yolo
+
+train: images
+val: images
+
+names:
+  0: flag
