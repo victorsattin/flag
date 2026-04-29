@@ -18,7 +18,7 @@ conda activate flag
 ```
 ## Dependencies
 
-Install all required packages using Anaconda PowerShell or terminal:
+Install all required packages utilizing Anaconda Prompt or PowerShell:
 
 ```bash
 pip install numpy==1.26.4 opencv-python==4.10.0.84 pillow==10.4.0 matplotlib==3.9.0 seaborn==0.13.2 scikit-learn==1.5.1 ultralytics==8.2.70 torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1
@@ -27,7 +27,7 @@ pip install numpy==1.26.4 opencv-python==4.10.0.84 pillow==10.4.0 matplotlib==3.
 Then
 
 ```bash
--c conda-forge opencv
+conda install opencv
 ```
 
 ## Optional (GPU Support - CUDA)
