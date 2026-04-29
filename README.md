@@ -1,19 +1,62 @@
-## Installation Requirements
+# Installation Requirements
 
-### Python Version
+## Python Version
 - Python 3.10+
 
-### Dependencies
+## Dependencies
 
-Install all required packages on Anaconda PowerShell:
-pip install numpy opencv-python pillow matplotlib seaborn scikit-learn ultralytics torch torchvision torchaudio
+Install all required packages using Anaconda PowerShell or terminal:
 
-### Optional (GPU Support - CUDA)
+```bash
+pip install numpy==1.26.4 \
+opencv-python==4.10.0.84 \
+pillow==10.4.0 \
+matplotlib==3.9.0 \
+seaborn==0.13.2 \
+scikit-learn==1.5.1 \
+ultralytics==8.2.70 \
+torch==2.3.1 \
+torchvision==0.18.1 \
+torchaudio==2.3.1
+```
+
+## Optional (GPU Support - CUDA)
+
 For GPU acceleration, install the CUDA-compatible PyTorch version:
 
+```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
 
-### Notes
+## Dataset Structure
+
+The dataset folder must be organized as:
+
+```text
+dataset/
+├── Germany/
+├── Belgium/
+├── Netherlands/
+├── Canada/
+├── Denmark/
+└── ...
+```
+
+Each subfolder must contain the images corresponding to one flag class.
+
+## Notes
+
 Pretrained models are downloaded automatically on first run:
+
 - ResNet18 (`torchvision`)
 - YOLOv8n (`ultralytics`)
+
+## Compatibility Note
+
+This project uses **NumPy 1.26.4** for compatibility with OpenCV, PyTorch and Ultralytics.
+
+**NumPy 2.x is not recommended**, as it may cause import errors such as:
+
+```text
+ImportError: numpy.core.multiarray failed to import
+```
