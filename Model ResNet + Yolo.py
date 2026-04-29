@@ -36,7 +36,7 @@ YOLO_TRAIN_LABELS = os.path.join(YOLO_LABELS, "train")
 YOLO_VAL_LABELS = os.path.join(YOLO_LABELS, "val")
 
 FINAL_DIR = "dataset_final"
-BALANCED_DIR = "dataset_balanceado"
+BALANCED_DIR = "balanced_dataset"
 
 YOLO_RUN_PROJECT = "runs/detect"
 YOLO_RUN_NAME = "train"
@@ -52,12 +52,12 @@ PATIENCE = 30
 BATCH_SIZE = 32
 RANDOM_STATE = 42
 
-BEST_MODEL_PATH = "melhor_modelo.pth"
-LAST_MODEL_PATH = "ultimo_modelo.pth"
+BEST_MODEL_PATH = "best_model.pth"
+LAST_MODEL_PATH = "last_model.pth"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-classes_ruins = ["Germany", "Belgium", "Netherlands", "Canada", "Denmark"]
+weak_classes = ["Germany", "Belgium", "Netherlands", "Canada", "Denmark"]
 
 # HELPERS
 def ensure_dir(path: str):
@@ -95,9 +95,9 @@ def imwrite_safe(path: str, img) -> bool:
         return True
     except Exception:
         return False
-
-# 0. LIMPAR PASTAS GERADAS
-print("Limpando pastas temporárias...")
+        
+# 0. CLEAN GENERATED FOLDERS
+print("Cleaning temporary folders...")
 reset_dir(YOLO_TRAIN_IMAGES)
 reset_dir(YOLO_VAL_IMAGES)
 reset_dir(YOLO_TRAIN_LABELS)
@@ -105,17 +105,21 @@ reset_dir(YOLO_VAL_LABELS)
 reset_dir(FINAL_DIR)
 reset_dir(BALANCED_DIR)
 
-# 1. CRIAR DATASET YOLO (CLASSE FLAG)
-print("Criando dataset YOLO para classe 'flag'...")
+# 1. CREATE YOLO DATASET (FLAG CLASS)
+print("Creating YOLO dataset for 'flag' class...")
 
 all_items = []
-for classe in os.listdir(INPUT_DIR):
-    class_dir = os.path.join(INPUT_DIR, classe)
+
+for class_name in os.listdir(INPUT_DIR):
+    class_dir = os.path.join(INPUT_DIR, class_name)
+
     if not os.path.isdir(class_dir):
         continue
+
     for img_name in os.listdir(class_dir):
         if is_image_file(img_name):
-            all_items.append((classe, img_name))
+            all_items.append((class_name, img_name))
+
 
 train_items, val_items = train_test_split(
     all_items,
@@ -123,22 +127,28 @@ train_items, val_items = train_test_split(
     random_state=RANDOM_STATE
 )
 
+
 def copy_with_full_flag_box(items, img_out_dir, lbl_out_dir):
-    for classe, img_name in items:
-        src = os.path.join(INPUT_DIR, classe, img_name)
+    for class_name, img_name in items:
+
+        src = os.path.join(INPUT_DIR, class_name, img_name)
+
         if not os.path.exists(src):
             continue
 
         img = imread_safe(src)
+
         if img is None:
-            print(f"Não foi possível ler: {src}")
+            print(f"Could not read: {src}")
             continue
 
-        new_name = f"{classe}_{img_name}"
+        new_name = f"{class_name}_{img_name}"
         dst_img = os.path.join(img_out_dir, new_name)
+
         ok = imwrite_safe(dst_img, img)
+
         if not ok:
-            print(f"Não foi possível salvar: {dst_img}")
+            print(f"Could not save: {dst_img}")
             continue
 
         stem = os.path.splitext(new_name)[0]
@@ -147,8 +157,19 @@ def copy_with_full_flag_box(items, img_out_dir, lbl_out_dir):
         with open(dst_lbl, "w", encoding="utf-8") as f:
             f.write("0 0.5 0.5 1.0 1.0\n")
 
-copy_with_full_flag_box(train_items, YOLO_TRAIN_IMAGES, YOLO_TRAIN_LABELS)
-copy_with_full_flag_box(val_items, YOLO_VAL_IMAGES, YOLO_VAL_LABELS)
+
+copy_with_full_flag_box(
+    train_items,
+    YOLO_TRAIN_IMAGES,
+    YOLO_TRAIN_LABELS
+)
+
+copy_with_full_flag_box(
+    val_items,
+    YOLO_VAL_IMAGES,
+    YOLO_VAL_LABELS
+)
+
 
 yaml_text = f"""path: {YOLO_ROOT}
 train: images/train
@@ -157,17 +178,20 @@ val: images/val
 names:
   0: flag
 """
+
 with open(YOLO_DATA_YAML, "w", encoding="utf-8") as f:
     f.write(yaml_text)
 
-print("Dataset YOLO criado.")
-print(f"Treino YOLO: {len(train_items)} imagens")
-print(f"Val YOLO: {len(val_items)} imagens")
 
-# 2. TREINAR YOLO FLAG
-print("Treinando YOLO específico para bandeiras...")
+print("YOLO dataset created.")
+print(f"YOLO training: {len(train_items)} images")
+print(f"YOLO validation: {len(val_items)} images")
+
+# 2. TRAIN YOLO FLAG DETECTOR
+print("Training YOLO specifically for flags...")
 
 yolo_train_model = YOLO("yolov8n.pt")
+
 yolo_train_model.train(
     data=YOLO_DATA_YAML,
     epochs=YOLO_EPOCHS,
@@ -177,12 +201,18 @@ yolo_train_model.train(
     exist_ok=True
 )
 
-print("YOLO treinado.")
+print("YOLO training complete.")
 
-# 3. VALIDAR YOLO E PEGAR mAP
-print("Validando YOLO...")
+# 3. VALIDATE YOLO AND GET mAP
+print("Validating YOLO...")
+
 yolo_model = YOLO(YOLO_MODEL_PATH)
-yolo_val_results = yolo_model.val(data=YOLO_DATA_YAML, imgsz=YOLO_IMGSZ, verbose=False)
+
+yolo_val_results = yolo_model.val(
+    data=YOLO_DATA_YAML,
+    imgsz=YOLO_IMGSZ,
+    verbose=False
+)
 
 yolo_map50 = None
 yolo_map50_95 = None
@@ -191,75 +221,100 @@ try:
     if hasattr(yolo_val_results, "box") and yolo_val_results.box is not None:
         if hasattr(yolo_val_results.box, "map50"):
             yolo_map50 = float(yolo_val_results.box.map50)
+
         if hasattr(yolo_val_results.box, "map"):
             yolo_map50_95 = float(yolo_val_results.box.map)
+
 except Exception:
     pass
 
-# 4. VISUALIZAR EXEMPLOS DO YOLO TREINADO
-def visualizar_exemplos_yolo(pasta_imagens, n=5):
-    print(f"\nMostrando {n} exemplos com bounding boxes do YOLO treinado...")
-    imagens = [x for x in os.listdir(pasta_imagens) if is_image_file(x)]
-    if not imagens:
-        print("Nenhuma imagem encontrada.")
+
+# 4. VISUALIZE TRAINED YOLO EXAMPLES
+def visualize_yolo_examples(image_folder, n=5):
+
+    print(f"\nShowing {n} examples with bounding boxes from trained YOLO...")
+
+    images = [x for x in os.listdir(image_folder) if is_image_file(x)]
+
+    if not images:
+        print("No images found.")
         return
 
-    amostra = random.sample(imagens, min(n, len(imagens)))
+    sample = random.sample(images, min(n, len(images)))
 
-    for img_name in amostra:
-        img_path = os.path.join(pasta_imagens, img_name)
+    for img_name in sample:
+
+        img_path = os.path.join(image_folder, img_name)
+
         img = imread_safe(img_path)
+
         if img is None:
-            print(f"Falha ao abrir: {img_path}")
+            print(f"Failed to open: {img_path}")
             continue
 
-        resultados = yolo_model(img, verbose=False)
+        results = yolo_model(img, verbose=False)
 
-        for r in resultados:
+        for r in results:
             for box in r.boxes:
+
                 conf = float(box.conf[0])
+
                 if conf < CONF_THRESHOLD:
                     continue
 
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(
+
+                cv2.rectangle(
                     img,
-                    f"{conf:.2f}",
-                    (x1, max(20, y1 - 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 255, 0),
+                    (x1, y1),
+                    (x2, y2),
+                    (0,255,0),
                     2
                 )
 
-        plt.figure(figsize=(5, 5))
+                cv2.putText(
+                    img,
+                    f"{conf:.2f}",
+                    (x1, max(20, y1-10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0,255,0),
+                    2
+                )
+
+        plt.figure(figsize=(5,5))
         plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         plt.title(img_name)
         plt.axis("off")
         plt.show()
 
-visualizar_exemplos_yolo(YOLO_VAL_IMAGES, n=5)
 
-# 5. GERAR DATASET FINAL COM O YOLO TREINADO
-print("Gerando dataset final a partir do YOLO treinado...")
+visualize_yolo_examples(YOLO_VAL_IMAGES, n=5)
 
-for classe in os.listdir(INPUT_DIR):
-    in_path = os.path.join(INPUT_DIR, classe)
-    out_path = os.path.join(FINAL_DIR, classe)
+# 5. GENERATE FINAL DATASET WITH TRAINED YOLO
+print("Generating final dataset from trained YOLO...")
+
+for class_name in os.listdir(INPUT_DIR):
+
+    in_path = os.path.join(INPUT_DIR, class_name)
+    out_path = os.path.join(FINAL_DIR, class_name)
+
     ensure_dir(out_path)
 
     if not os.path.isdir(in_path):
         continue
 
     for img_name in os.listdir(in_path):
+
         if not is_image_file(img_name):
             continue
 
         img_path = os.path.join(in_path, img_name)
+
         img = imread_safe(img_path)
+
         if img is None:
-            print(f"Não foi possível ler: {img_path}")
+            print(f"Could not read: {img_path}")
             continue
 
         results = yolo_model(img, verbose=False)
@@ -269,7 +324,9 @@ for classe in os.listdir(INPUT_DIR):
 
         for r in results:
             for box in r.boxes:
+
                 conf = float(box.conf[0])
+
                 if conf < CONF_THRESHOLD:
                     continue
 
@@ -280,7 +337,8 @@ for classe in os.listdir(INPUT_DIR):
         if best_box is None:
             continue
 
-        x1, y1, x2, y2 = map(int, best_box.xyxy[0])
+        x1,y1,x2,y2 = map(int, best_box.xyxy[0])
+
         crop = img[y1:y2, x1:x2]
 
         if crop is None or crop.size == 0:
@@ -288,104 +346,143 @@ for classe in os.listdir(INPUT_DIR):
 
         out_name = f"{os.path.splitext(img_name)[0]}_crop.jpg"
         out_file = os.path.join(out_path, out_name)
+
         ok = imwrite_safe(out_file, crop)
+
         if not ok:
-            print(f"Falha ao salvar crop: {out_file}")
+            print(f"Failed to save crop: {out_file}")
 
-print("Dataset final criado com o YOLO treinado.")
 
-# 6. VISUALIZAÇÃO AUTOMÁTICA DO DATASET FINAL
-def visualizar_exemplos_dataset_final(root_dir, n_por_classe=2):
-    print("\nVisualizando exemplos do dataset final...")
+print("Final dataset created with trained YOLO.")
 
-    for classe in os.listdir(root_dir):
-        classe_dir = os.path.join(root_dir, classe)
-        if not os.path.isdir(classe_dir):
+# 6. AUTOMATIC FINAL DATASET VISUALIZATION
+def visualize_final_dataset_examples(root_dir, n_per_class=2):
+
+    print("\nVisualizing examples from final dataset...")
+
+    for class_name in os.listdir(root_dir):
+
+        class_dir = os.path.join(root_dir, class_name)
+
+        if not os.path.isdir(class_dir):
             continue
 
-        imagens = [x for x in os.listdir(classe_dir) if is_image_file(x)]
-        if not imagens:
+        images = [
+            x for x in os.listdir(class_dir)
+            if is_image_file(x)
+        ]
+
+        if not images:
             continue
 
-        amostra = random.sample(imagens, min(n_por_classe, len(imagens)))
+        sample = random.sample(
+            images,
+            min(n_per_class, len(images))
+        )
 
-        for img_name in amostra:
-            img_path = os.path.join(classe_dir, img_name)
+        for img_name in sample:
+
+            img_path = os.path.join(class_dir, img_name)
+
             img = imread_safe(img_path)
+
             if img is None:
                 continue
 
-            plt.figure(figsize=(4, 4))
+            plt.figure(figsize=(4,4))
             plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-            plt.title(f"{classe} | {img_name}")
+            plt.title(f"{class_name} | {img_name}")
             plt.axis("off")
             plt.show()
 
-visualizar_exemplos_dataset_final(FINAL_DIR, n_por_classe=2)
+visualize_final_dataset_examples(
+    FINAL_DIR,
+    n_per_class=2
+)
 
-# 7. DATASET BALANCEADO
-print("Balanceando dataset...")
+# 7. BALANCED DATASET
+print("Balancing dataset...")
 
-augment_leve = transforms.Compose([
+light_augmentation = transforms.Compose([
     transforms.RandomHorizontalFlip(0.2),
     transforms.RandomRotation(10)
 ])
 
-augment_forte = transforms.Compose([
-    transforms.RandomResizedCrop(512, scale=(0.6, 1.0)),
+strong_augmentation = transforms.Compose([
+    transforms.RandomResizedCrop(
+        512,
+        scale=(0.6,1.0)
+    ),
     transforms.RandomRotation(30),
-    transforms.ColorJitter(0.5, 0.5, 0.5),
+    transforms.ColorJitter(0.5,0.5,0.5),
     transforms.RandomHorizontalFlip(0.5)
 ])
 
-for classe in os.listdir(FINAL_DIR):
-    in_path = os.path.join(FINAL_DIR, classe)
-    out_path = os.path.join(BALANCED_DIR, classe)
+for class_name in os.listdir(FINAL_DIR):
+
+    in_path = os.path.join(FINAL_DIR, class_name)
+    out_path = os.path.join(BALANCED_DIR, class_name)
+
     ensure_dir(out_path)
 
     if not os.path.isdir(in_path):
         continue
 
     for img_name in os.listdir(in_path):
+
         if not is_image_file(img_name):
             continue
 
         img_path = os.path.join(in_path, img_name)
+
         try:
             img = Image.open(img_path).convert("RGB")
+
         except Exception:
-            print(f"Falha ao abrir com PIL: {img_path}")
+            print(f"Failed to open with PIL: {img_path}")
             continue
 
-        img.save(os.path.join(out_path, img_name))
+        img.save(
+            os.path.join(out_path, img_name)
+        )
 
-        if classe in classes_ruins:
-            n_aug, aug = 5, augment_forte
+        if class_name in weak_classes:
+            n_aug, aug = 5, strong_augmentation
         else:
-            n_aug, aug = 1, augment_leve
+            n_aug, aug = 1, light_augmentation
 
         for i in range(n_aug):
             aug_img = aug(img)
-            aug_img.save(os.path.join(out_path, f"aug_{i}_{img_name}"))
 
-print("Dataset balanceado pronto!")
+            aug_img.save(
+                os.path.join(
+                    out_path,
+                    f"aug_{i}_{img_name}"
+                )
+            )
 
-# 8. DATASET + SPLIT ESTRATIFICADO
+print("Balanced dataset ready!")
+
+# 8. DATASET + STRATIFIED SPLIT
 train_transform = transforms.Compose([
     transforms.RandomResizedCrop(512, scale=(0.6, 1.0)),
     transforms.RandomRotation(25),
     transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
     transforms.RandomHorizontalFlip(0.5),
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+    transforms.Normalize(
+        [0.485, 0.456, 0.406],
+        [0.229, 0.224, 0.225]
+    )
 ])
 
 val_transform = transforms.Compose([
     transforms.Resize((512, 512)),
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+    transforms.Normalize(
+        [0.485, 0.456, 0.406],
+        [0.229, 0.224, 0.225]
+    )
 ])
 
 full_dataset = datasets.ImageFolder(root=BALANCED_DIR)
@@ -409,23 +506,48 @@ val_idx, test_idx, _, _ = train_test_split(
     random_state=RANDOM_STATE
 )
 
-train_base = datasets.ImageFolder(root=BALANCED_DIR, transform=train_transform)
-val_base = datasets.ImageFolder(root=BALANCED_DIR, transform=val_transform)
-test_base = datasets.ImageFolder(root=BALANCED_DIR, transform=val_transform)
+train_base = datasets.ImageFolder(
+    root=BALANCED_DIR,
+    transform=train_transform
+)
+
+val_base = datasets.ImageFolder(
+    root=BALANCED_DIR,
+    transform=val_transform
+)
+
+test_base = datasets.ImageFolder(
+    root=BALANCED_DIR,
+    transform=val_transform
+)
 
 train_dataset = Subset(train_base, train_idx)
 val_dataset = Subset(val_base, val_idx)
 test_dataset = Subset(test_base, test_idx)
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=True
+)
 
-print("Treino:", len(train_dataset))
-print("Validação:", len(val_dataset))
-print("Teste:", len(test_dataset))
+val_loader = DataLoader(
+    val_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=False
+)
 
-# 9. MODELO RESNET
+test_loader = DataLoader(
+    test_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=False
+)
+
+print("Training:", len(train_dataset))
+print("Validation:", len(val_dataset))
+print("Test:", len(test_dataset))
+
+# 9. RESNET MODEL
 model = resnet18(weights=ResNet18_Weights.DEFAULT)
 
 for param in model.parameters():
@@ -437,25 +559,34 @@ for param in model.layer4.parameters():
 for param in model.fc.parameters():
     param.requires_grad = True
 
-model.fc = nn.Linear(model.fc.in_features, len(classes))
+model.fc = nn.Linear(
+    model.fc.in_features,
+    len(classes)
+)
+
 model = model.to(device)
 
 criterion = nn.CrossEntropyLoss()
+
 optimizer = optim.Adam(
-    filter(lambda p: p.requires_grad, model.parameters()),
+    filter(
+        lambda p: p.requires_grad,
+        model.parameters()
+    ),
     lr=0.0003
 )
 
-# 10. TREINO + EARLY STOPPING
+# 10. TRAINING + EARLY STOPPING
 train_losses = []
 val_accuracies = []
 
 best_val = -1.0
 best_epoch = -1
+
 counter = 0
 min_delta = 1e-6
 
-print("Treinando ResNet...")
+print("Training ResNet...")
 
 for epoch in range(RESNET_EPOCHS):
     model.train()
@@ -463,13 +594,11 @@ for epoch in range(RESNET_EPOCHS):
 
     for imgs, labels in train_loader:
         imgs, labels = imgs.to(device), labels.to(device)
-
         optimizer.zero_grad()
         out = model(imgs)
         loss = criterion(out, labels)
         loss.backward()
         optimizer.step()
-
         total_loss += loss.item()
 
     model.eval()
@@ -477,12 +606,12 @@ for epoch in range(RESNET_EPOCHS):
     total = 0
 
     with torch.no_grad():
+
         for imgs, labels in val_loader:
+
             imgs, labels = imgs.to(device), labels.to(device)
-
             out = model(imgs)
-            _, preds = torch.max(out, 1)
-
+            _, preds = torch.max(out,1)
             total += labels.size(0)
             correct += (preds == labels).sum().item()
 
@@ -491,54 +620,78 @@ for epoch in range(RESNET_EPOCHS):
     train_losses.append(total_loss)
     val_accuracies.append(val_acc)
 
-    print(f"Epoch {epoch+1} | Loss {total_loss:.4f} | Val {val_acc:.2f}%")
-    
-    torch.save({
-        "epoch": epoch + 1,
-        "model_state": model.state_dict(),
-        "classes": classes,
-        "val_acc": val_acc
-    }, LAST_MODEL_PATH)
+    print(
+        f"Epoch {epoch+1} | "
+        f"Loss {total_loss:.4f} | "
+        f"Val {val_acc:.2f}%"
+    )
 
-    
-    if val_acc > best_val + min_delta:
-        best_val = val_acc
-        best_epoch = epoch + 1
-        counter = 0
-
-        torch.save({
-            "epoch": best_epoch,
+    torch.save(
+        {
+            "epoch": epoch + 1,
             "model_state": model.state_dict(),
             "classes": classes,
-            "best_val_acc": best_val
-        }, BEST_MODEL_PATH)
+            "val_acc": val_acc
+        },
+        LAST_MODEL_PATH
+    )
 
-        print(f"Melhor modelo salvo! Época: {best_epoch} | Val Acc: {best_val:.2f}%")
+    if val_acc > best_val + min_delta:
+
+        best_val = val_acc
+        best_epoch = epoch + 1
+
+        counter = 0
+
+        torch.save(
+            {
+                "epoch": best_epoch,
+                "model_state": model.state_dict(),
+                "classes": classes,
+                "best_val_acc": best_val
+            },
+            BEST_MODEL_PATH
+        )
+
+        print(
+            f"Best model saved! "
+            f"Epoch: {best_epoch} | "
+            f"Val Acc: {best_val:.2f}%"
+        )
+
     else:
         counter += 1
-        print(f"Sem melhora. Paciência: {counter}/{PATIENCE}")
+
+        print(
+            f"No improvement. "
+            f"Patience: {counter}/{PATIENCE}"
+        )
+
 
     if counter >= PATIENCE:
         print("Early stopping")
         break
 
-print(f"\nMelhor época: {best_epoch} | Melhor Val Acc: {best_val:.2f}%")
+print(
+    f"\nBest epoch: {best_epoch} | "
+    f"Best Val Acc: {best_val:.2f}%"
+)
 
-# 11. GRÁFICO
+# 11. PLOT
 plt.figure(figsize=(8, 5))
 plt.plot(train_losses, label="Loss")
-plt.plot(val_accuracies, label="Val Accuracy")
-plt.title("Treinamento")
+plt.plot(val_accuracies, label="Validation Accuracy")
+plt.title("Training")
 plt.legend()
 plt.show()
 
-# 12. RESULTADOS RESNET
+# 12. RESNET RESULTS
 checkpoint = torch.load(BEST_MODEL_PATH, map_location=device)
 model.load_state_dict(checkpoint["model_state"])
 classes = checkpoint["classes"]
 
-print(f"Época salva: {checkpoint.get('epoch', 'N/A')}")
-print(f"Melhor Val Acc: {checkpoint.get('best_val_acc', 'N/A')}")
+print(f"Saved epoch: {checkpoint.get('epoch', 'N/A')}")
+print(f"Best Validation Accuracy: {checkpoint.get('best_val_acc', 'N/A')}")
 
 model.eval()
 
@@ -546,7 +699,7 @@ all_preds = []
 all_labels = []
 all_probs = []
 
-# tempo de inferência
+# inference time
 total_inference_time = 0.0
 total_images = 0
 
@@ -571,7 +724,7 @@ with torch.no_grad():
 
 avg_inference_time = total_inference_time / total_images if total_images > 0 else 0.0
 
-print(f"\nTempo médio de inferência por imagem: {avg_inference_time:.6f} s")
+print(f"\nAverage inference time per image: {avg_inference_time:.6f} s")
 
 all_labels = np.array(all_labels)
 all_preds = np.array(all_preds)
@@ -598,6 +751,7 @@ precision_weighted, recall_weighted, f1_weighted, _ = precision_recall_fscore_su
 )
 
 y_true_bin = label_binarize(all_labels, classes=labels_ids)
+
 try:
     map_classification_macro = average_precision_score(
         y_true_bin,
@@ -607,21 +761,21 @@ try:
 except ValueError:
     map_classification_macro = None
 
-print("\nMÉTRICAS GERAIS DO RESNET")
-print(f"Acurácia: {accuracy:.4f}")
-print(f"Precisão (macro): {precision_macro:.4f}")
+print("\nGENERAL RESNET METRICS")
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision (macro): {precision_macro:.4f}")
 print(f"Recall (macro): {recall_macro:.4f}")
 print(f"F1-score (macro): {f1_macro:.4f}")
-print(f"Precisão (weighted): {precision_weighted:.4f}")
+print(f"Precision (weighted): {precision_weighted:.4f}")
 print(f"Recall (weighted): {recall_weighted:.4f}")
 print(f"F1-score (weighted): {f1_weighted:.4f}")
 
 if map_classification_macro is not None:
-    print(f"mAP classificação (macro AP): {map_classification_macro:.4f}")
+    print(f"Classification mAP (macro AP): {map_classification_macro:.4f}")
 else:
-    print("mAP classificação (macro AP): não pôde ser calculado")
+    print("Classification mAP (macro AP): could not be calculated")
 
-print("\nRELATÓRIO FINAL")
+print("\nFINAL REPORT")
 print(classification_report(
     all_labels,
     all_preds,
@@ -640,28 +794,31 @@ sns.heatmap(
     xticklabels=classes,
     yticklabels=classes
 )
-plt.title("Matriz de Confusão")
-plt.xlabel("Predito")
-plt.ylabel("Real")
+
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("True")
 plt.show()
 
-# 13. mAP DO YOLO
-print("\nMÉTRICAS DO YOLO")
+# 13. YOLO mAP
+print("\nYOLO METRICS")
+
 if yolo_map50 is not None:
     print(f"YOLO mAP@0.50: {yolo_map50:.4f}")
 else:
-    print("YOLO mAP@0.50: não disponível")
+    print("YOLO mAP@0.50: unavailable")
 
 if yolo_map50_95 is not None:
     print(f"YOLO mAP@0.50:0.95: {yolo_map50_95:.4f}")
 else:
-    print("YOLO mAP@0.50:0.95: não disponível")
+    print("YOLO mAP@0.50:0.95: unavailable")
 
-# 14. INFERÊNCIA FINAL YOLO + RESNET COM TOP-3
-def detectar_e_classificar(img_path):
+# 14. FINAL YOLO + RESNET INFERENCE WITH TOP-3
+def detect_and_classify(img_path):
     img = imread_safe(img_path)
+
     if img is None:
-        print("Erro ao carregar imagem.")
+        print("Error loading image.")
         return None
 
     start_time = time.perf_counter()
@@ -671,16 +828,20 @@ def detectar_e_classificar(img_path):
     for r in results:
         for box in r.boxes:
             conf = float(box.conf[0])
+
             if conf < CONF_THRESHOLD:
                 continue
 
             x1, y1, x2, y2 = map(int, box.xyxy[0])
+
             crop = img[y1:y2, x1:x2]
+
             if crop is None or crop.size == 0:
                 continue
 
             crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
             crop_pil = Image.fromarray(crop_rgb)
+
             tensor = val_transform(crop_pil).unsqueeze(0).to(device)
 
             with torch.no_grad():
@@ -690,16 +851,27 @@ def detectar_e_classificar(img_path):
             top_probs, top_idxs = torch.topk(probs, 3)
 
             top_texts = []
+
             for rank in range(min(3, top_idxs.shape[1])):
                 cls_name = classes[top_idxs[0, rank].item()]
                 cls_prob = top_probs[0, rank].item() * 100
-                top_texts.append(f"{rank+1}: {cls_name} ({cls_prob:.1f}%)")
+                top_texts.append(
+                    f"{rank+1}: {cls_name} ({cls_prob:.1f}%)"
+                )
 
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.rectangle(
+                img,
+                (x1, y1),
+                (x2, y2),
+                (0, 255, 0),
+                2
+            )
 
             base_y = max(20, y1 - 10)
+
             for i, txt in enumerate(top_texts):
                 y_text = base_y + i * 25
+
                 cv2.putText(
                     img,
                     txt,
@@ -711,7 +883,8 @@ def detectar_e_classificar(img_path):
                 )
 
     inference_time = time.perf_counter() - start_time
-    print(f"\nTempo de inferência: {inference_time:.4f} s")
+
+    print(f"\nInference time: {inference_time:.4f} s")
 
     plt.figure(figsize=(8, 8))
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -720,36 +893,50 @@ def detectar_e_classificar(img_path):
     plt.show()
 
     return inference_time
-
-# 15. COMPARAÇÃO MELHOR x ÚLTIMO
+    
+# 15. BEST vs LAST COMPARISON
 best_ckpt = torch.load(BEST_MODEL_PATH, map_location=device)
 last_ckpt = torch.load(LAST_MODEL_PATH, map_location=device)
 
-print("\nCOMPARAÇÃO DOS CHECKPOINTS")
-print("Melhor modelo -> época:", best_ckpt.get("epoch"), "| val_acc:", best_ckpt.get("best_val_acc"))
-print("Último modelo -> época:", last_ckpt.get("epoch"), "| val_acc:", last_ckpt.get("val_acc"))
+print("\nCHECKPOINT COMPARISON")
+print(
+    "Best model -> epoch:",
+    best_ckpt.get("epoch"),
+    "| val_acc:",
+    best_ckpt.get("best_val_acc")
+)
 
-# 16. RESUMO FINAL
-print("\n==================== RESUMO FINAL ====================")
-print(f"Melhor época ResNet: {best_epoch}")
-print(f"Melhor Val Acc ResNet: {best_val:.4f}")
+print(
+    "Last model -> epoch:",
+    last_ckpt.get("epoch"),
+    "| val_acc:",
+    last_ckpt.get("val_acc")
+)
+
+# 16. FINAL SUMMARY
+print("\n==================== FINAL SUMMARY ====================")
+
+print(f"Best ResNet epoch: {best_epoch}")
+print(f"Best ResNet Validation Accuracy: {best_val:.4f}")
 print(f"ResNet Accuracy: {accuracy:.4f}")
 print(f"ResNet Precision (macro): {precision_macro:.4f}")
 print(f"ResNet Recall (macro): {recall_macro:.4f}")
 print(f"ResNet F1-score (macro): {f1_macro:.4f}")
-print(f"Tempo médio de inferência por imagem: {avg_inference_time:.6f} s")
+print(f"Average inference time per image: {avg_inference_time:.6f} s")
+
 if map_classification_macro is not None:
-    print(f"ResNet mAP (classificação): {map_classification_macro:.4f}")
+    print(f"ResNet mAP (classification): {map_classification_macro:.4f}")
 else:
-    print("ResNet mAP (classificação): não disponível")
+    print("ResNet mAP (classification): unavailable")
 
 if yolo_map50 is not None:
     print(f"YOLO mAP@0.50: {yolo_map50:.4f}")
 else:
-    print("YOLO mAP@0.50: não disponível")
+    print("YOLO mAP@0.50: unavailable")
 
 if yolo_map50_95 is not None:
     print(f"YOLO mAP@0.50:0.95: {yolo_map50_95:.4f}")
 else:
-    print("YOLO mAP@0.50:0.95: não disponível")
+    print("YOLO mAP@0.50:0.95: unavailable")
+
 print("=====================================================")
