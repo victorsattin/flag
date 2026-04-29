@@ -171,7 +171,7 @@ copy_with_full_flag_box(
 )
 
 
-yaml_text = f"""path: {YOLO_ROOT}
+yaml_text = f"""path: {os.path.abspath(YOLO_ROOT)}
 train: images/train
 val: images/val
 
