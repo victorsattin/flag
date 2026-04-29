@@ -44,6 +44,41 @@ dataset/
 
 Each subfolder must contain the images corresponding to one flag class.
 
+## Creating the Dataset with OpenCV
+
+To build the image dataset, place all source videos inside a folder named:
+
+```text
+videos/
+```
+
+Example:
+
+```text
+project/
+├── videos/
+│   ├── germany.mp4
+│   ├── belgium.mp4
+│   └── canada.mp4
+```
+
+Frames can be extracted from the videos using OpenCV and saved as images for the dataset.
+
+The OpenCV script will extract frames from the video and generate images for the dataset.
+
+### Final Dataset Structure
+
+```text
+dataset/
+├── Germany/
+├── Belgium/
+├── Netherlands/
+├── Canada/
+└── Denmark/
+```
+
+Each class folder should contain the extracted images corresponding to one flag category.
+
 ## Notes
 
 Pretrained models are downloaded automatically on first run:
