@@ -76,19 +76,6 @@ Frames can be extracted from the videos using OpenCV and saved as images for the
 
 The OpenCV script will extract frames from the video and generate images for the dataset.
 
-### Final Dataset Structure
-
-```text
-dataset/
-├── Germany/
-├── Belgium/
-├── Netherlands/
-├── Canada/
-└── Denmark/
-```
-
-Each class folder should contain the extracted images corresponding to one flag category.
-
 ## Notes
 
 Pretrained models are downloaded automatically on first run:
